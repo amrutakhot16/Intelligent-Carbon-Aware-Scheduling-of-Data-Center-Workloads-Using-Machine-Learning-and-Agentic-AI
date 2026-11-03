@@ -98,3 +98,27 @@ def chronological_split(model_df: pd.DataFrame, train_end: pd.Timestamp = TRAIN_
     print(f"Train: {train.shape}  {train.ts.min():%Y-%m-%d} → {train.ts.max():%Y-%m-%d}")
     print(f"Test : {test.shape}  {test.ts.min():%Y-%m-%d} → {test.ts.max():%Y-%m-%d}")
     return train, test
+
+
+def get_xy(frame: pd.DataFrame):
+    """
+    Separate the input features from the target.
+
+    :param frame: train or test table
+    :return: (X with the feature columns, y with the target column)
+    """
+    return frame[NUM_FEATURES + CAT_FEATURES], frame[TARGET]
+
+
+def make_preprocessor(scale: bool = True) -> ColumnTransformer:
+    """
+    One-hot encode the region column and optionally standardize the numeric features.
+    Linear Regression needs scaling; the tree models don't, so they use scale=False.
+    The preprocessor goes inside the model pipeline, so it is fitted on training data only.
+
+    :param scale: whether to apply StandardScaler to the numeric features
+    :return: unfitted ColumnTransformer
+    """
+    return ColumnTransformer([
+        ("num", StandardScaler() if scale else "passthrough", NUM_FEATURES),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CAT_FEATURES)])
