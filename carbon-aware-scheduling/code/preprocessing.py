@@ -72,3 +72,70 @@ def clean_carbon_intensity(ci_raw: pd.DataFrame):
     ci["is_estimated"] = ci["is_estimated"].fillna(1).astype(int)
     print("CI clean shape:", ci.shape, "| remaining NaNs:", int(ci[num_cols].isna().sum().sum()))
     return ci, full_idx
+
+
+def clean_weather(w_raw: pd.DataFrame, w_offset: dict, full_idx: pd.DatetimeIndex) -> pd.DataFrame:
+    """
+    Convert the weather timestamps from local time to UTC, align them to the carbon intensity
+    grid, fill short gaps and clip humidity and cloud cover to 0-100.
+
+    :param w_raw: raw weather rows
+    :param w_offset: {region: set of UTC offsets in seconds}
+    :param full_idx: hourly UTC grid from clean_carbon_intensity()
+    :return: clean weather table with region, ts and the four weather columns
+    """
+    steps = w_raw.assign(t=pd.to_datetime(w_raw["time"])).groupby("region")["t"].diff().dropna()
+    print("Time steps between consecutive weather rows:", steps.value_counts().to_dict())
+    print("Fixed UTC offsets per region (seconds):", {k: sorted(v) for k, v in w_offset.items()})
+
+    parts = []
+    for r, g in w_raw.groupby("region"):
+        off = pd.Timedelta(seconds=list(w_offset[r])[0])
+        ts = (pd.to_datetime(g["time"]) - off).dt.tz_localize("UTC")
+        g = g.assign(ts=ts).drop_duplicates("ts").set_index("ts").drop(columns=["time", "region"])
+        g = align_to_grid(g, full_idx)
+        n_gap = int(g.isna().any(axis=1).sum())
+        g = g.interpolate(method="time", limit=6).ffill(limit=12).bfill(limit=12)
+        if n_gap:
+            print(f"  {r}: filled {n_gap} missing weather hours")
+        parts.append(g.assign(region=r))
+
+    weather = pd.concat(parts).rename_axis("ts").reset_index()
+    weather = weather.rename(columns={"temperature_2m": "temp_c", "relative_humidity_2m": "humidity",
+                                      "cloudcover": "cloud_pct", "windspeed_10m": "wind_kmh"})
+    weather["humidity"] = weather["humidity"].clip(0, 100)
+    weather["cloud_pct"] = weather["cloud_pct"].clip(0, 100)
+    print("Weather clean shape:", weather.shape, "| NaNs:", int(weather.isna().sum().sum()))
+    return weather
+
+
+def clean_prices(p_raw: pd.DataFrame, regions: list, full_idx: pd.DatetimeIndex,
+                 train_end: pd.Timestamp = TRAIN_END) -> pd.DataFrame:
+    """
+    Align the prices to the hourly grid and clip extreme values per region.
+    The clipping limits come from the training years only.
+
+    :param p_raw: raw price rows
+    :param regions: regions to keep (the ones that have carbon intensity data)
+    :param full_idx: hourly UTC grid from clean_carbon_intensity()
+    :param train_end: start of the test period; only earlier rows are used for the limits
+    :return: clean price table with region, ts and price
+    """
+    price = p_raw.rename(columns={"Datetime (UTC)": "ts", "Price (USD/MWh)": "price"})[["region", "ts", "price"]]
+    price["ts"] = pd.to_datetime(price["ts"], utc=True)
+    price = price[price.region.isin(regions)].drop_duplicates(["region", "ts"])
+    off_hour = price.ts.dt.minute != 0
+    print("Price rows not on the full hour:", price[off_hour].region.value_counts().to_dict())
+
+    price = pd.concat([align_to_grid(g.set_index("ts")[["price"]], full_idx).assign(region=r)
+                       for r, g in price.groupby("region")]).rename_axis("ts").reset_index().dropna(subset=["price"])
+
+    q = price[price.ts < train_end].groupby("region")["price"].quantile([0.005, 0.995]).unstack()
+    price = price.join(q, on="region")
+    n_clip = int(((price.price < price[0.005]) | (price.price > price[0.995])).sum())
+    price["price"] = price["price"].clip(price[0.005], price[0.995])
+    price = price.drop(columns=[0.005, 0.995])
+    print(f"Winsorised {n_clip} extreme price values ({n_clip / len(price):.2%})")
+    return price
+
+
