@@ -139,3 +139,41 @@ def clean_prices(p_raw: pd.DataFrame, regions: list, full_idx: pd.DatetimeIndex,
     return price
 
 
+def merge_sources(ci: pd.DataFrame, weather: pd.DataFrame, price: pd.DataFrame,
+                  train_end: pd.Timestamp = TRAIN_END) -> pd.DataFrame:
+    """
+    Join weather and prices onto the carbon intensity table. Missing prices (GB has none)
+    are filled with the median price for that UTC hour in the training years, and a
+    price_missing flag records which rows were filled.
+
+    :param ci: clean carbon intensity table
+    :param weather: clean weather table
+    :param price: clean price table
+    :param train_end: start of the test period; only earlier rows are used for the median
+    :return: merged hourly table
+    """
+    df = ci.merge(weather, on=["region", "ts"], how="left").merge(price, on=["region", "ts"], how="left")
+    print("Merged shape:", df.shape)
+    na = df.isna().sum()
+    print("Missing values after merge:\n", na[na > 0])
+
+    df["price_missing"] = df["price"].isna().astype(int)
+    df["hour_utc"] = df.ts.dt.hour
+    hourly_median = df[df.ts < train_end].groupby("hour_utc")["price"].median()
+    df["price"] = df["price"].fillna(df["hour_utc"].map(hourly_median))
+    print("After imputation, total NaNs:", int(df.isna().sum().sum()))
+    return df
+
+
+def preprocess(raw: dict) -> pd.DataFrame:
+    """
+    Run all the cleaning steps and merge the three sources.
+
+    :param raw: dict returned by data_loading.load_all()
+    :return: merged hourly table, ready for feature engineering
+    """
+    ci, full_idx = clean_carbon_intensity(raw["ci_raw"])
+    weather = clean_weather(raw["w_raw"], raw["w_offset"], full_idx)
+    price = clean_prices(raw["p_raw"], raw["regions"], full_idx)
+    return merge_sources(ci, weather, price)
+
