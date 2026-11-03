@@ -1,0 +1,25 @@
+{
+  "paths": {
+    "data_dir": "data/sustain-cluster/data",
+    "processed_dir": "data/processed",
+    "models_dir": "data/models",
+    "figures_dir": "resources/figures",
+    "results_dir": "resources"
+  },
+  "hpe_repo_url": "https://github.com/HewlettPackard/sustain-cluster.git",
+  "seed": 42,
+  "horizon": 24,
+  "fast_mode": true,
+  "train_end": "2024-01-01",
+  "val_start": "2023-10-01",
+  "target_raw": "Carbon Intensity gCO₂eq/kWh (LCA)",
+  "target": "ci",
+  "ci_lags": [
+    24,
+    25,
+    26,
+    48,
+    72,
+    168
+  ]
+}

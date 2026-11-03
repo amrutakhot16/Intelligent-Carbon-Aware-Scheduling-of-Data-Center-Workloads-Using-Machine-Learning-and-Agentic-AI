@@ -1,0 +1,18 @@
+# raw dataset (~400 MB) — downloaded automatically by code/main.py
+data/sustain-cluster/
+
+# generated files (recreate with: python code/main.py)
+data/processed/
+data/models/*.joblib
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
