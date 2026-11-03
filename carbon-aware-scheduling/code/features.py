@@ -61,3 +61,40 @@ def add_calendar_features(df: pd.DataFrame, region_tz: dict) -> pd.DataFrame:
     df["month_cos"] = np.cos(2 * np.pi * (df.month_local - 1) / 12)
     df["is_weekend"] = (df.dow_local >= 5).astype(int)
     return df
+
+
+def build_model_table(df: pd.DataFrame, region_tz: dict) -> pd.DataFrame:
+    """
+    Build the final modelling table: add all features, then drop the first rows of each
+    region, where the lag windows reach back before the start of the data.
+
+    :param df: cleaned and merged hourly table
+    :param region_tz: {region: timezone name}
+    :return: table with no missing values in the features or the target
+    """
+    df = add_lag_features(df)
+    df = add_calendar_features(df, region_tz)
+    n_before = len(df)
+    model_df = df.dropna(subset=NUM_FEATURES + [TARGET]).reset_index(drop=True)
+    print(f"Dropped {n_before - len(model_df)} rows whose lag windows reach before the first data hour")
+    print("Modelling table:", model_df.shape, "| features:", len(NUM_FEATURES) + len(CAT_FEATURES))
+    return model_df
+
+
+def chronological_split(model_df: pd.DataFrame, train_end: pd.Timestamp = TRAIN_END):
+    """
+    Split by time instead of randomly: everything before train_end is training data,
+    everything from train_end on is test data. A random split would let the model see
+    the hours right before and after each test hour.
+    Rows are sorted by time so TimeSeriesSplit can be used for cross-validation on the training set.
+
+    :param model_df: modelling table
+    :param train_end: first timestamp of the test period
+    :return: (train, test)
+    """
+    model_df = model_df.sort_values(["ts", "region"]).reset_index(drop=True)
+    train = model_df[model_df.ts < train_end]
+    test = model_df[model_df.ts >= train_end]
+    print(f"Train: {train.shape}  {train.ts.min():%Y-%m-%d} → {train.ts.max():%Y-%m-%d}")
+    print(f"Test : {test.shape}  {test.ts.min():%Y-%m-%d} → {test.ts.max():%Y-%m-%d}")
+    return train, test
