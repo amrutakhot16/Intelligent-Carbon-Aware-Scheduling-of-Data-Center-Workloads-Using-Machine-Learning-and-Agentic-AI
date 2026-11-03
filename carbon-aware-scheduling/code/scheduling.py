@@ -73,3 +73,66 @@ def time_shift_savings(cubes: dict, strategies: list) -> pd.DataFrame:
     print("Mean over regions:", saving.mean().round(1).to_dict())
     return saving
 
+
+def spatio_temporal_savings(cubes: dict, strategies: list, regions: list,
+                            reference: str = REFERENCE_REGION, job_h: int = JOB_HOURS) -> pd.DataFrame:
+    """
+    CO₂ saved when the job can be moved to any region and any start time, compared with
+    running it immediately in the reference region (New York by default).
+
+    :param cubes: output of build_cubes()
+    :param strategies: strategy names to compare
+    :param regions: regions the job may be moved to
+    :param reference: region used as the "run now" comparison
+    :param job_h: job length in hours, used to turn window totals into an average per hour
+    :return: average carbon intensity of the chosen windows and the % reduction, also saved as a CSV
+    """
+    common = min(len(c["actual"]) for c in cubes.values())
+    act_all = np.stack([cubes[r]["actual"][:common] for r in regions], 1)      # days × regions × starts
+    out = {f"Run now in {reference}": cubes[reference]["actual"][:common, 0].mean()}
+    for s in strategies + ["oracle"]:
+        est = act_all if s == "oracle" else np.stack([cubes[r][s][:common] for r in regions], 1)
+        flat = est.reshape(common, -1).argmin(1)
+        out[f"Best region+time by {s}"] = act_all.reshape(common, -1)[np.arange(common), flat].mean()
+    sp = pd.Series(out) / job_h
+    table = pd.DataFrame({"avg gCO₂/kWh of chosen window": sp.round(1),
+                          f"reduction vs {reference} now %": ((1 - sp / sp.iloc[0]) * 100).round(1)})
+    table.to_csv(RESULTS_DIR / "scheduling_region_time_savings.csv")
+    print(table.to_string())
+    return table
+
+
+def example_recommendation(cubes: dict, regions: list, model: str = "XGBoost",
+                           day: str = "2024-03-14", reference: str = REFERENCE_REGION, job_h: int = JOB_HOURS) -> str:
+    """
+    Show the recommendation the scheduler would make for one job on one day: where and when
+    to run it, how much CO₂ that saves, and the next best options.
+
+    :param cubes: output of build_cubes()
+    :param regions: regions the job may be moved to
+    :param model: whose forecast to use
+    :param day: date of the request (job arrives at 00:00 UTC)
+    :param reference: region used as the "run now" comparison
+    :param job_h: job length in hours
+    :return: the recommendation as text (also printed)
+    """
+    day = pd.Timestamp(day, tz="UTC")
+    d_idx = list(cubes[reference]["days"]).index(day)
+    est = np.stack([cubes[r][model][d_idx] for r in regions])
+    act = np.stack([cubes[r]["actual"][d_idx] for r in regions])
+    ri, si = np.unravel_index(est.argmin(), est.shape)
+    ref_now = cubes[reference]["actual"][d_idx, 0] / job_h
+    best = act[ri, si] / job_h
+
+    lines = [f"Request on {day:%Y-%m-%d} 00:00 UTC: {job_h}-hour job, must finish within {WINDOW_HOURS} h.",
+             f"→ Run in {regions[ri]} starting {si:02d}:00 UTC. Forecast {est[ri, si] / job_h:.0f} g/kWh, "
+             f"actual {best:.0f} g/kWh vs {ref_now:.0f} g/kWh running now in {reference} → "
+             f"{100 * (1 - best / ref_now):.0f}% less CO₂, finishes by {si + job_h:02d}:00 UTC.",
+             "Top-3 alternatives by forecast:"]
+    for k in np.argsort(est.ravel())[:3]:
+        r_, s_ = np.unravel_index(k, est.shape)
+        lines.append(f"   {regions[r_]:12s} start {s_:02d}:00 UTC  forecast {est[r_, s_] / job_h:5.0f}  "
+                     f"actual {act[r_, s_] / job_h:5.0f} g/kWh")
+    text = "\n".join(lines)
+    print(text)
+    return text
