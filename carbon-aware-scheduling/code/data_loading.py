@@ -36,3 +36,39 @@ def list_regions(data_dir: Path = DATA_DIR) -> list:
     """
     return sorted(p.name for p in (data_dir / "carbon_intensity").iterdir()
                   if p.is_dir() and not p.name.startswith("_"))
+
+
+def load_carbon_intensity(data_dir: Path = DATA_DIR) -> pd.DataFrame:
+    """
+    Load the hourly carbon intensity files for all regions and years.
+    :param data_dir: root folder of the dataset
+    :return: raw carbon intensity rows with a `region` column
+    """
+    frames = []
+    for f in sorted(glob.glob(str(data_dir / "carbon_intensity" / "*" / "*" / "*.csv"))):
+        d = pd.read_csv(f)
+        d["region"] = Path(f).parts[-3]
+        frames.append(d)
+    return pd.concat(frames, ignore_index=True)
+
+
+def load_weather(data_dir: Path = DATA_DIR):
+    """
+    Load the hourly weather JSON files for all regions.
+    Weather timestamps are in local time, with one fixed UTC offset per file
+    (`utc_offset_seconds`), so the offsets are returned for converting to UTC later.
+    :param data_dir: root folder of the dataset
+    :return: (weather rows, {region: timezone name}, {region: set of UTC offsets in seconds})
+    """
+    frames, region_tz, w_offset = [], {}, {}
+    for f in sorted(glob.glob(str(data_dir / "weather" / "*" / "*.json"))):
+        with open(f) as fh:
+            j = json.load(fh)
+        region = Path(f).parts[-2]
+        d = pd.DataFrame(j["hourly"])
+        d["region"] = region
+        region_tz[region] = j["timezone"]
+        w_offset.setdefault(region, set()).add(j["utc_offset_seconds"])
+        frames.append(d)
+    return pd.concat(frames, ignore_index=True), region_tz, w_offset
+
