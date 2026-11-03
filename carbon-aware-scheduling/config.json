@@ -46,5 +46,26 @@
   ],
   "categorical_features": [
     "region"
-  ]
+  ],
+  "scheduling": {
+    "job_hours": 4,
+    "window_hours": 24,
+    "reference_region": "US-NY-NYIS"
+  },
+  "deep_learning": {
+    "seq_len": 48,
+    "hidden": 64,
+    "num_layers": 1,
+    "dropout": 0.1,
+    "region_emb": 8,
+    "tft_d_model": 32,
+    "tft_heads": 4,
+    "batch_size": 512,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "max_epochs": 30,
+    "max_epochs_fast": 10,
+    "fast_fraction": 0.25,
+    "patience": 4
+  }
 }
