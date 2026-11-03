@@ -129,13 +129,24 @@ On Google Colab, set `PROJECT_ROOT` to the repository folder before importing th
 | Naive persistence (24 h) | 28.0 | 29.0 | 48.3 | 0.945 | – |
 | Naive same hour last week | 39.0 | 40.1 | 64.2 | 0.903 | −38.5% |
 | Linear Regression | 27.0 | 28.2 | 42.0 | 0.959 | +2.8% |
-| Random Forest | 14.5 | 24.8 | 39.0 | 0.964 | +14.3% |
-| XGBoost | 17.5 | 24.3 | 38.2 | 0.966 | +16.0% |
-| LSTM | ? | ? | ? | ? | ? |
-| GRU | ? | ? | ? | ? | ? |
-| TFT | ? | ? | ? | ? | ? |
+| Random Forest* | 14.5 | 24.8 | 39.0 | 0.964 | +14.3% |
+| XGBoost | 18.8 | 24.3 | 38.2 | 0.966 | +16.1% |
+| LSTM | 21.0 | 24.3 | 38.5 | 0.965 | +16.1% |
+| GRU | 19.6 | 23.7 | **37.3** | **0.967** | +18.2% |
+| TFT | 20.6 | **23.6** | 37.5 | **0.967** | **+18.4%** |
+
+\*Random Forest comes from a separate run with the same data, split and settings.
 
 See `resources/model_results.csv` for the full table.
+
+- **TFT and GRU are the most accurate models**, cutting the test MAE by about 18% compared with the persistence
+  baseline. XGBoost and LSTM come next (about 16%), followed by Random Forest (14%). Linear Regression barely beats
+  persistence (3%) because one set of linear weights has to fit all 16 grids.
+- **Overfitting:** Random Forest has the largest gap between train and test MAE (14.5 vs 24.8), while the neural
+  networks have the smallest (about 3 to 4 gCO₂/kWh), helped by early stopping and dropout.
+- **Per region** (`resources/per_region_mae.csv`): errors are largest on wind- and solar-heavy grids (Germany 60–63,
+  Texas 46–50, Victoria 44–46, GB 38–42) and smallest on very stable grids (Singapore, India-West, Brazil, under 7).
+  On the stable grids the neural networks match or beat persistence, while XGBoost and Linear Regression are slightly worse.
 
 ### Scheduling simulation
 
@@ -153,16 +164,16 @@ hour using only its forecast, and is scored on the actual carbon intensity of th
 | Linear Regression | 14.3% | 85% |
 | Naive persistence | 13.3% | 79% |
 
-\*Random Forest comes from a separate run.
-
 All the trained models give almost the same saving, so small differences in forecast accuracy do not lead to
 noticeably different scheduling decisions. The savings are largest in grids with strong daily swings
 (Chile 52%, California 47%, Ontario 38%) and close to zero in grids that stay flat during the day (Australia, Korea, Japan).
-Allowing the job to move to any region as well cuts CO₂ by about 81% compared with running it immediately in New York.
+Allowing the job to move to any region as well cuts CO₂ by about 81% compared with running it immediately in New York
+(GRU and TFT 81.4%, XGBoost 81.3%, LSTM 81.0%; oracle 83.6%).
 
 ## Limitations
 
 - Weather at the target hour is the observed value, used as a stand-in for a weather forecast, so results are
   slightly optimistic.
 - One model is trained for all 16 regions; errors are largest on wind- and solar-heavy grids (Germany, Texas, Victoria, GB).
+- Tuning uses a subsample of the training data and small search budgets in fast mode.for all 16 regions; errors are largest on wind- and solar-heavy grids (Germany, Texas, Victoria, GB).
 - Tuning uses a subsample of the training data and small search budgets in fast mode.
