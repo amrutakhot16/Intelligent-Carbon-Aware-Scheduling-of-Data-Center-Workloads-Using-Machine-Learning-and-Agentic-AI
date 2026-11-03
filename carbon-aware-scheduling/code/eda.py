@@ -88,3 +88,42 @@ def plot_daily_profiles(ci_raw: pd.DataFrame, regions: list, region_tz: dict, fi
     axes[1].set(title="Germany, first two weeks of June 2023", ylabel="gCO₂eq/kWh")
     axes[1].tick_params(axis="x", rotation=30)
     plt.tight_layout(); plt.savefig(fig_dir / "eda_daily_profiles.png", dpi=120); plt.close()
+
+
+def plot_feature_correlation(model_df: pd.DataFrame, num_features: list, target: str, fig_dir=FIG_DIR) -> list:
+    """
+    Plot each feature's correlation with the target and the full feature correlation matrix.
+    Used as a feature selection check to find features that carry almost the same information.
+
+    :param model_df: modelling table with all engineered features
+    :param num_features: names of the numeric feature columns
+    :param target: name of the target column
+    :param fig_dir: folder to save the figure in
+    :return: list of (feature_a, feature_b, r) for pairs with |r| > 0.97
+    """
+    corr = model_df[num_features + [target]].corr()
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw={"width_ratios": [1, 1.4]})
+    corr[target].drop(target).sort_values().plot.barh(ax=axes[0], color="#4c8c7a")
+    axes[0].set(title=f"Pearson correlation with target ({target})", xlabel="r")
+    sns.heatmap(corr, cmap="vlag", center=0, ax=axes[1], xticklabels=True, yticklabels=True, cbar_kws={"shrink": .6})
+    axes[1].set_title("Feature correlation matrix"); axes[1].tick_params(labelsize=7)
+    plt.tight_layout(); plt.savefig(fig_dir / "feature_correlation.png", dpi=120); plt.close()
+
+    # check each pair of features once (upper triangle of the matrix)
+    high = [(a, b, round(corr.loc[a, b], 3)) for i, a in enumerate(num_features)
+            for b in num_features[i + 1:] if abs(corr.loc[a, b]) > 0.97]
+    print("Highly collinear pairs (|r| > 0.97):", high)
+    return high
+
+
+def run_eda(raw: dict) -> None:
+    """
+    Run all the EDA on the raw data: printed summaries and the two raw-data figures.
+    The feature correlation plot is called separately, after feature engineering.
+
+    :param raw: dict returned by data_loading.load_all()
+    :return: None
+    """
+    summarize_raw(raw["ci_raw"], raw["w_raw"], raw["p_raw"])
+    plot_region_boxplot(raw["ci_raw"])
+    plot_daily_profiles(raw["ci_raw"], raw["regions"], raw["region_tz"])
