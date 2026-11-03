@@ -75,3 +75,30 @@ class SeqData:
         idx = np.maximum(idx, self.block_start[rows][:, None])        # never reach into another region
         r = torch.from_numpy(rows)
         return self.X[torch.from_numpy(idx)].to(DEVICE), self.region_id[r].to(DEVICE), self.target_t[r].to(DEVICE)
+
+def build_sequence_data(train: pd.DataFrame, test: pd.DataFrame) -> SeqData:
+    """
+    Create the sequence data used by all three networks.
+
+    :param train: training rows
+    :param test: test rows
+    :return: SeqData object
+    """
+    return SeqData(train, test)
+
+
+@torch.no_grad()
+def predict_rows(model: nn.Module, data: SeqData, rows: np.ndarray, batch_size: int = 2048) -> np.ndarray:
+    """
+    Predict carbon intensity (gCO₂/kWh) for the given rows.
+
+    :param model: trained network
+    :param data: SeqData object
+    :param rows: positions in the sorted arrays
+    :param batch_size: rows per forward pass
+    :return: predictions in gCO₂/kWh
+    """
+    model.eval()
+    out = np.concatenate([model(*data.batch(rows[i:i + batch_size])[:2]).cpu().numpy()
+                          for i in range(0, len(rows), batch_size)])
+    return data.base[rows] + out * data.scale
