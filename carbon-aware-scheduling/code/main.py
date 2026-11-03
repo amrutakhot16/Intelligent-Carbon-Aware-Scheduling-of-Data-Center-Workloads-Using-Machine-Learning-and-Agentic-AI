@@ -151,7 +151,7 @@ def main(args) -> None:
                   tft_model.plot_variable_importance(dl_fitted["TFT"][0], seq).iloc[::-1].head(8).round(3).to_string())
 
     section("11. Model comparison")
-    res = comparison_table(results, save_name="model_results.csv" if args.skip_dl else "checkin2_results.csv")
+    res = comparison_table(results)
     plot_model_comparison(res)
     strategies = ["Naive: persistence 24h"] + [m for m in ALL_MODELS if m in preds]
     per_region_mae(test, preds, strategies)
