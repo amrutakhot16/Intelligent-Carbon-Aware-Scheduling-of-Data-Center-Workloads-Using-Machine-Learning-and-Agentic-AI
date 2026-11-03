@@ -46,3 +46,27 @@ def section(title: str) -> None:
     :return: None
     """
     print(f"\n{'=' * 100}\n{title}\n{'=' * 100}")
+
+def save_artifacts(model_df, models: dict, region_tz: dict) -> None:
+    """
+    Save the modelling table, the trained classical models and the feature settings
+    they were trained with, so they can be reloaded later without retraining.
+
+    :param model_df: final modelling table
+    :param models: {model name: fitted model}; XGBoost is stored as (preprocessor, model)
+    :param region_tz: {region: timezone name}
+    :return: None
+    """
+    model_df.to_parquet(PROC_DIR / "model_table.parquet", index=False)
+    if "Linear Regression" in models:
+        joblib.dump(models["Linear Regression"], MODEL_DIR / "linear_regression.joblib")
+    if "Random Forest" in models:
+        joblib.dump(models["Random Forest"], MODEL_DIR / "random_forest.joblib", compress=3)
+    if "XGBoost" in models:
+        prep, booster = models["XGBoost"]
+        joblib.dump(prep, MODEL_DIR / "xgb_preprocessor.joblib")
+        booster.get_booster().save_model(MODEL_DIR / "xgboost.json")
+    with open(MODEL_DIR / "feature_config.json", "w") as f:
+        json.dump({"NUM_FEATURES": NUM_FEATURES, "CAT_FEATURES": CAT_FEATURES,
+                   "HORIZON": HORIZON, "REGION_TZ": region_tz}, f, indent=2)
+    print("Saved:", sorted(p.name for p in MODEL_DIR.iterdir()), "+", sorted(p.name for p in PROC_DIR.iterdir()))
