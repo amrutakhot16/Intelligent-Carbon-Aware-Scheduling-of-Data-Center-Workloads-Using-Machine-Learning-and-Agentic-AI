@@ -102,3 +102,106 @@ def predict_rows(model: nn.Module, data: SeqData, rows: np.ndarray, batch_size: 
     out = np.concatenate([model(*data.batch(rows[i:i + batch_size])[:2]).cpu().numpy()
                           for i in range(0, len(rows), batch_size)])
     return data.base[rows] + out * data.scale
+
+
+def fit(model: nn.Module, data: SeqData, name: str, fast_mode: bool = True):
+    """
+    Train a network with AdamW and L1 loss (L1 because the main metric is MAE). Training stops
+    when the validation MAE (Oct-Dec 2023) has not improved for `patience` epochs, and the
+    weights from the best epoch are restored.
+
+    :param model: untrained network
+    :param data: SeqData object
+    :param name: model name, used in the printed output
+    :param fast_mode: fewer epochs and a random subset of the training rows each epoch
+    :return: (model, train predictions, test predictions, info), predictions in the original row order
+    """
+    torch.manual_seed(SEED)
+    rng = np.random.default_rng(SEED)
+    model.to(DEVICE)
+    n_params = sum(p.numel() for p in model.parameters())
+    max_epochs = DL["max_epochs_fast"] if fast_mode else DL["max_epochs"]
+    frac = DL["fast_fraction"] if fast_mode else 1.0              # fast mode: a fresh random subset every epoch
+    fit_rows, val_rows = np.where(data.is_fit)[0], np.where(data.is_val)[0]
+    n_use, bs = int(len(fit_rows) * frac), DL["batch_size"]
+    print(f"{name}: {n_params:,} parameters | device {DEVICE.type} | {n_use:,} samples/epoch | up to {max_epochs} epochs")
+
+    opt = torch.optim.AdamW(model.parameters(), lr=DL["lr"], weight_decay=DL["weight_decay"])
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
+    loss_fn = nn.L1Loss()
+    history = {"train_MAE": [], "val_MAE": []}
+    best, best_state, best_epoch, bad, t_start = np.inf, None, 0, 0, time.time()
+
+    for epoch in range(1, max_epochs + 1):
+        t0 = time.time()
+        model.train()
+        losses = []
+        perm = rng.permutation(fit_rows)[:n_use]
+        for i in range(0, len(perm), bs):
+            x, reg, y = data.batch(perm[i:i + bs])
+            opt.zero_grad()
+            loss = loss_fn(model(x, reg), y)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+            losses.append(loss.item())
+        tr_mae = float(np.mean(losses)) * data.scale
+        val_mae = float(np.mean(np.abs(predict_rows(model, data, val_rows) - data.y[val_rows])))
+        sched.step(val_mae)
+        history["train_MAE"].append(tr_mae); history["val_MAE"].append(val_mae)
+        print(f"  epoch {epoch:2d}  train MAE {tr_mae:6.2f}  val MAE {val_mae:6.2f}  ({time.time() - t0:.0f}s)")
+        if val_mae < best - 1e-3:
+            best, best_epoch, bad, best_state = val_mae, epoch, 0, copy.deepcopy(model.state_dict())
+        else:
+            bad += 1
+            if bad >= DL["patience"]:
+                print(f"  early stopping (best epoch {best_epoch}, val MAE {best:.2f})")
+                break
+    model.load_state_dict(best_state)
+    print(f"{name} fit time {time.time() - t_start:.0f}s | best epoch {best_epoch} | best val MAE {best:.2f}")
+
+    pred_sorted = predict_rows(model, data, np.arange(len(data.y)))
+    pred = np.empty(len(pred_sorted), dtype=np.float64)
+    pred[data.pos] = pred_sorted                                   # back to the original train + test order
+    info = {"history": history, "best_epoch": best_epoch, "n_params": n_params,
+            "fit_seconds": time.time() - t_start, "hparams": dict(DL)}
+    return model, pred[:data.n_train], pred[data.n_train:], info
+
+
+def plot_training_curves(infos: dict, fig_dir=FIG_DIR) -> None:
+    """
+    Plot the training and validation MAE per epoch for each network, with a dot at the
+    epoch that was kept.
+
+    :param infos: {model name: info dict returned by fit()}
+    :param fig_dir: folder to save the figure in
+    :return: None
+    """
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    for (name, info), c in zip(infos.items(), ["#e08e45", "#9b7bb8", "#3a9d5d"]):
+        ep = range(1, len(info["history"]["val_MAE"]) + 1)
+        ax.plot(ep, info["history"]["val_MAE"], c=c, lw=2, label=f"{name} validation")
+        ax.plot(ep, info["history"]["train_MAE"], c=c, lw=1, ls="--", label=f"{name} train")
+        ax.scatter([info["best_epoch"]], [info["history"]["val_MAE"][info["best_epoch"] - 1]], c=c, zorder=3)
+    ax.set(title="Deep-learning learning curves (dot = chosen epoch)", xlabel="epoch", ylabel="MAE (gCO₂/kWh)")
+    ax.legend(fontsize=8, ncol=2)
+    plt.tight_layout(); plt.savefig(fig_dir / "dl_learning_curves.png", dpi=120); plt.close()
+
+
+def save_dl_artifacts(fitted: dict, data: SeqData) -> None:
+    """
+    Save the weights of each network, plus everything needed to rebuild the input windows
+    and undo the scaling when the models are loaded again.
+
+    :param fitted: {model name: (network, info)}
+    :param data: SeqData object used for training
+    :return: None
+    """
+    for name, (net, info) in fitted.items():
+        torch.save(net.state_dict(), MODEL_DIR / f"{name.lower()}.pt")
+    with open(MODEL_DIR / "dl_config.json", "w") as f:
+        json.dump({"seq_len": data.seq_len, "NUM_FEATURES": NUM_FEATURES, "regions": data.regions,
+                   "scaler_mean": data.scaler.mean_.tolist(), "scaler_scale": data.scaler.scale_.tolist(),
+                   "residual_scale": data.scale, "hparams": dict(DL),
+                   "models": {n: {"params": i["n_params"], "best_epoch": i["best_epoch"]} for n, (_, i) in fitted.items()}},
+                  f, indent=2)
