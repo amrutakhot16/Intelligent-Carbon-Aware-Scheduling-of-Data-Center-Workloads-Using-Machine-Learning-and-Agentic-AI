@@ -1,0 +1,10 @@
+,avg gCO₂/kWh of chosen window,reduction vs US-NY-NYIS now %
+Run now in US-NY-NYIS,300.0,0.0
+Best region+time by Naive: persistence 24h,61.3,79.6
+Best region+time by Linear Regression,57.7,80.8
+Best region+time by Random Forest,56.4,81.2
+Best region+time by XGBoost,56.0,81.3
+Best region+time by LSTM,57.2,80.9
+Best region+time by GRU,55.8,81.4
+Best region+time by TFT,55.9,81.4
+Best region+time by oracle,49.1,83.6
