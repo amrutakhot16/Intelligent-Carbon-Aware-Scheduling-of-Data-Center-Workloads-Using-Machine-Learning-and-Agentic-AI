@@ -1,0 +1,52 @@
+{
+  "NUM_FEATURES": [
+    "ci_lag24",
+    "ci_lag25",
+    "ci_lag26",
+    "ci_lag48",
+    "ci_lag72",
+    "ci_lag168",
+    "ci_roll24_mean",
+    "ci_roll24_std",
+    "ci_roll168_mean",
+    "ci_trend24",
+    "renewable_pct_lag24",
+    "low_carbon_pct_lag24",
+    "is_estimated_lag24",
+    "price_lag24",
+    "price_missing",
+    "temp_c",
+    "humidity",
+    "cloud_pct",
+    "wind_kmh",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "month_sin",
+    "month_cos",
+    "is_weekend"
+  ],
+  "CAT_FEATURES": [
+    "region"
+  ],
+  "HORIZON": 24,
+  "REGION_TZ": {
+    "AU-NSW": "Australia/Sydney",
+    "AU-VIC": "Australia/Melbourne",
+    "BR-SP": "America/Sao_Paulo",
+    "CA-ON": "America/Toronto",
+    "CL-SIC": "America/Santiago",
+    "DE-LU": "Europe/Berlin",
+    "GB": "Europe/London",
+    "IN-WE": "Asia/Kolkata",
+    "JP-TK": "Asia/Tokyo",
+    "KR": "Asia/Seoul",
+    "SG": "Asia/Singapore",
+    "US-CAL-CISO": "America/Los_Angeles",
+    "US-MIDA-PJM": "America/New_York",
+    "US-NY-NYIS": "America/New_York",
+    "US-TEX-ERCO": "America/Chicago",
+    "ZA": "Africa/Johannesburg"
+  }
+}

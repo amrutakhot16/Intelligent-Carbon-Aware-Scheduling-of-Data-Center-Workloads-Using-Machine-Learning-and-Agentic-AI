@@ -1,8 +1,8 @@
 # raw dataset (~400 MB) — downloaded automatically by code/main.py
-../data/sustain-cluster/
+data/sustain-cluster/
 
 # generated files (recreate with: python code/main.py)
-../data/processed/
+data/processed/
 data/models/*.joblib
 
 # Python / Jupyter
